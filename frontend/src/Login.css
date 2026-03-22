@@ -1,3 +1,19 @@
+.login-wrapper {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-image: url('./login-bg.png');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50; 
+}
+
 .login-glass {
   background: var(--glass-bg) !important;
   backdrop-filter: blur(16px) !important;

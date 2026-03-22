@@ -1,16 +1,15 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import Editor from '@monaco-editor/react'
 import mermaid from 'mermaid'
+import TerminalChat from './components/TerminalChat'
+import CodeWorkspace from './components/CodeWorkspace'
 import './FocusRoom.css'
 
-function FocusRoom({ isDarkTheme, toggleTheme, levelUp }) {
+function FocusRoom({ levelUp }) {
   const { topicId } = useParams()
   const navigate = useNavigate()
   
   const [isTakingQuiz, setIsTakingQuiz] = useState(false)
-  const [isRenaming, setIsRenaming] = useState(false)
-  const [renameVal, setRenameVal] = useState("")
 
   const curriculumMap = {
     "intro": ["Syntax Basics", "Data Types", "Control Flow"],
@@ -98,29 +97,19 @@ function FocusRoom({ isDarkTheme, toggleTheme, levelUp }) {
   const currentSpace = workspaces[activeSubtopic] || { code: "// Loading...", threads: [], activeThreadId: 1 }
 
   const [whiteboardMode, setWhiteboardMode] = useState("code")
-  const [consoleOutput, setConsoleOutput] = useState("Compiler Ready.")
-  const [isCompiling, setIsCompiling] = useState(false)
-  const [currentQuery, setCurrentQuery] = useState("")
-  const [isTyping, setIsTyping] = useState(false)
-  const [isMemoryOpen, setIsMemoryOpen] = useState(false)
   
   const [flowchartSvg, setFlowchartSvg] = useState("")
   const [mindmapSvg, setMindmapSvg] = useState("") 
 
   const [chatWidth, setChatWidth] = useState(450) 
-  const [terminalHeight, setTerminalHeight] = useState(180)
-  const [memoryWidth, setMemoryWidth] = useState(250) 
-  
   const [isResizingChat, setIsResizingChat] = useState(false)
-  const [isResizingTerminal, setIsResizingTerminal] = useState(false)
-  const [isResizingMemory, setIsResizingMemory] = useState(false) 
   
-  const [isTerminalMinimized, setIsTerminalMinimized] = useState(false) 
   const [isZenMode, setIsZenMode] = useState(false)
   const [isZenChatOpen, setIsZenChatOpen] = useState(false) 
   
   const containerRef = useRef(null)
 
+  // Only the Chat Resize logic remains here
   useEffect(() => {
     const handleMouseMove = (e) => {
       if (isResizingChat && containerRef.current) {
@@ -128,38 +117,28 @@ function FocusRoom({ isDarkTheme, toggleTheme, levelUp }) {
         const newWidth = containerRect.right - e.clientX
         if (newWidth > 250 && newWidth < containerRect.width * 0.6) setChatWidth(newWidth)
       }
-      if (isResizingTerminal && !isZenMode) {
-        const newHeight = window.innerHeight - e.clientY - 60
-        if (newHeight > 50 && newHeight < 600) setTerminalHeight(newHeight)
-      }
-      if (isResizingMemory) {
-        const rightOffset = isZenMode ? 0 : chatWidth
-        const newMemWidth = window.innerWidth - e.clientX - rightOffset - 40 
-        if (newMemWidth > 200 && newMemWidth < 600) setMemoryWidth(newMemWidth)
-      }
     }
-    const handleMouseUp = () => { setIsResizingChat(false); setIsResizingTerminal(false); setIsResizingMemory(false); document.body.style.cursor = 'default'; }
+    const handleMouseUp = () => { setIsResizingChat(false); document.body.style.cursor = 'default'; }
     
-    if (isResizingChat || isResizingTerminal || isResizingMemory) { 
+    if (isResizingChat) { 
       document.addEventListener('mousemove', handleMouseMove); 
       document.addEventListener('mouseup', handleMouseUp); 
       document.body.style.userSelect = 'none'; 
     }
     return () => { document.removeEventListener('mousemove', handleMouseMove); document.removeEventListener('mouseup', handleMouseUp); }
-  }, [isResizingChat, isResizingTerminal, isResizingMemory, chatWidth, isZenMode])
+  }, [isResizingChat, chatWidth])
 
   useEffect(() => {
     if (whiteboardMode !== 'flowchart' && whiteboardMode !== 'mind map') return; 
 
     mermaid.initialize({
       startOnLoad: false,
-      theme: isDarkTheme ? 'dark' : 'default',
+      theme: 'default',
       fontFamily: 'var(--font-body)',
       securityLevel: 'loose', 
     })
     
     const renderChart = async () => {
-      // CLEAR PREVIOUS DIAGRAM TO PREVENT GHOSTING
       if (whiteboardMode === 'flowchart') setFlowchartSvg("")
       if (whiteboardMode === 'mind map') setMindmapSvg("")
 
@@ -172,8 +151,6 @@ function FocusRoom({ isDarkTheme, toggleTheme, levelUp }) {
         }
         
         const { svg } = await mermaid.render(`mermaid-${Date.now()}`, chartText)
-        
-        // CONVERT THE SVG TO A STATIC IMAGE URL
         const imageUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
         
         if (whiteboardMode === 'flowchart') setFlowchartSvg(imageUrl)
@@ -181,7 +158,6 @@ function FocusRoom({ isDarkTheme, toggleTheme, levelUp }) {
         
       } catch (error) {
         console.error("Mermaid parsing error:", error)
-        // CONVERT ERROR MESSAGE TO STATIC IMAGE URL TOO
         const errorSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="50"><text x="10" y="25" fill="#e53e3e" font-family="sans-serif">Syntax Error in Diagram</text></svg>`
         const errorUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(errorSvg)}`
         
@@ -191,7 +167,7 @@ function FocusRoom({ isDarkTheme, toggleTheme, levelUp }) {
     }
 
     renderChart()
-  }, [whiteboardMode, activeSubtopic, isDarkTheme])
+  }, [whiteboardMode, activeSubtopic])
 
   const handleSubtopicChange = (newSub) => {
     if (!workspaces[newSub]) {
@@ -206,80 +182,11 @@ function FocusRoom({ isDarkTheme, toggleTheme, levelUp }) {
 
   const handleCodeChange = (newCode) => setWorkspaces(prev => ({ ...prev, [activeSubtopic]: { ...prev[activeSubtopic], code: newCode } }))
 
-  const handleNewThread = () => {
-    const newId = currentSpace.threads.length + 1
-    const newTitle = `Thread ${newId}`
+  const handleUpdateSpace = (updatedSpace) => {
     setWorkspaces(prev => ({
-        ...prev,
-        [activeSubtopic]: {
-            ...prev[activeSubtopic],
-            threads: [...prev[activeSubtopic].threads, { id: newId, title: newTitle, messages: [{ role: 'ai', text: `[NEW THREAD] Ready.` }] }],
-            activeThreadId: newId
-        }
+      ...prev,
+      [activeSubtopic]: updatedSpace
     }))
-  }
-
-  const handleRenameThread = () => {
-    const currentThread = currentSpace.threads.find(t => t.id === currentSpace.activeThreadId)
-    setRenameVal(currentThread.title)
-    setIsRenaming(true)
-  }
-
-  const saveThreadName = () => {
-    if (renameVal.trim() !== "") {
-      setWorkspaces(prev => ({
-        ...prev,
-        [activeSubtopic]: {
-          ...prev[activeSubtopic],
-          threads: prev[activeSubtopic].threads.map(t =>
-            t.id === currentSpace.activeThreadId ? { ...t, title: renameVal } : t
-          )
-        }
-      }))
-    }
-    setIsRenaming(false)
-  }
-
-  const handleDeleteThread = () => {
-    const space = workspaces[activeSubtopic];
-    if (space.threads.length <= 1) return; 
-
-    setWorkspaces(prev => {
-        const currentSpace = prev[activeSubtopic];
-        const updatedThreads = currentSpace.threads.filter(t => t.id !== currentSpace.activeThreadId);
-        
-        return {
-            ...prev,
-            [activeSubtopic]: {
-                ...currentSpace,
-                threads: updatedThreads,
-                activeThreadId: updatedThreads[0].id 
-            }
-        }
-    });
-  }
-
-  const handleSwitchThread = (threadId) => setWorkspaces(prev => ({ ...prev, [activeSubtopic]: { ...prev[activeSubtopic], activeThreadId: threadId } }))
-
-  const handleSend = () => {
-    if (currentQuery.trim() === "") return;
-    const userMsg = { role: 'user', text: currentQuery }
-    setWorkspaces(prev => {
-        const space = prev[activeSubtopic]
-        const updatedThreads = space.threads.map(t => t.id === space.activeThreadId ? { ...t, messages: [...t.messages, userMsg] } : t)
-        return { ...prev, [activeSubtopic]: { ...space, threads: updatedThreads } }
-    })
-    setCurrentQuery("")
-    setIsTyping(true)
-    setTimeout(() => {
-        const aiMsg = { role: 'ai', text: `Analyzing logic...` }
-        setWorkspaces(prev => {
-            const space = prev[activeSubtopic]
-            const updatedThreads = space.threads.map(t => t.id === space.activeThreadId ? { ...t, messages: [...t.messages, aiMsg] } : t)
-            return { ...prev, [activeSubtopic]: { ...space, threads: updatedThreads } }
-        })
-        setIsTyping(false)
-    }, 1000)
   }
 
   const handlePassQuiz = () => {
@@ -288,22 +195,11 @@ function FocusRoom({ isDarkTheme, toggleTheme, levelUp }) {
     navigate('/hub', { replace: true }); 
   }
 
-  const handleRunCode = () => {
-    setIsCompiling(true)
-    setConsoleOutput("Compiling...")
-    setTimeout(() => { setIsCompiling(false); setConsoleOutput(`[SUCCESS] Output:\nHello World\nExecution Time: 0.012s`); setIsTerminalMinimized(false); }, 1000)
-  }
-
   const toggleZenMode = () => {
     const enteringZen = !isZenMode
     setIsZenMode(enteringZen)
     setIsZenChatOpen(false) 
-    if (enteringZen) {
-      setIsTerminalMinimized(true) 
-    }
   }
-
-  const activeMessages = currentSpace.threads.find(t => t.id === currentSpace.activeThreadId)?.messages || []
 
   const modeTabs = ['code', 'memory map', 'reading', 'video', 'flowchart', 'mind map'];
 
@@ -339,7 +235,7 @@ function FocusRoom({ isDarkTheme, toggleTheme, levelUp }) {
 
         <div className="profile-area" style={{ display: "flex", alignItems: "center", gap: "15px" }}>
           <button className="logic-btn" onClick={() => setIsTakingQuiz(true)} style={{ width: "auto", padding: "8px 16px", borderColor: "#68d391", color: "#68d391" }}>TEST MASTERY</button>
-          <button className="logic-btn" onClick={toggleTheme} style={{ width: "35px", height: "35px", padding: 0, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}>{isDarkTheme ? "🌙" : "☀️"}</button>
+          <div style={{ width: "40px", height: "40px", borderRadius: "50%", border: "2px solid var(--accent)", background: "var(--glass-border)" }}></div>
           <button className="logic-btn" style={{ width: "35px", height: "35px", padding: 0, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
           </button>
@@ -400,102 +296,15 @@ function FocusRoom({ isDarkTheme, toggleTheme, levelUp }) {
           )}
 
           <div className="scrollable-content" style={{ padding: isZenMode ? "0" : "20px", overflowY: (whiteboardMode === 'flowchart' || whiteboardMode === 'mind map') ? 'hidden' : 'auto' }}>
+            
+            {/* THE NEW MODULAR CODE WORKSPACE COMPONENT */}
             {whiteboardMode === 'code' && (
-                <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, position: "relative" }}>
-                    <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
-                        <div style={{ flex: 1, position: "relative", border: isZenMode ? "none" : "1px solid var(--glass-border)", borderRadius: isZenMode ? "0" : "8px", overflow: "hidden" }}>
-                            <Editor
-                                height="100%"
-                                defaultLanguage="cpp"
-                                theme="vs-dark"
-                                value={currentSpace.code}
-                                onChange={handleCodeChange}
-                                options={{ minimap: { enabled: false }, fontSize: 16, fontFamily: "'Courier New', Courier, monospace", padding: { top: 25 }, mouseWheelZoom: true }}
-                            />
-                            <button 
-                              onClick={() => setIsMemoryOpen(!isMemoryOpen)} 
-                              style={{ 
-                                position: "absolute", 
-                                bottom: isZenMode ? (isTerminalMinimized ? "80px" : "290px") : "15px", 
-                                right: "20px", 
-                                background: "rgba(0,0,0,0.8)", 
-                                padding: "6px 12px", 
-                                borderRadius: "4px", 
-                                fontSize: "0.75rem", 
-                                border: "1px solid var(--accent)", 
-                                color: "var(--accent)", 
-                                cursor: "pointer", 
-                                zIndex: 100,
-                                transition: "bottom 0.2s ease" 
-                              }}
-                            >
-                                {isMemoryOpen ? "❌ CLOSE VISUALIZER" : "✨ MEMORY VISUALIZER"}
-                            </button>
-                        </div>
-
-                        {isMemoryOpen && (
-                            <>
-                              <div className="resizer-vertical" onMouseDown={() => { setIsResizingMemory(true); document.body.style.cursor = 'col-resize'; }} style={{ margin: "0 5px" }}></div>
-                              <div className="memory-panel" style={{ width: memoryWidth, padding: "10px", borderRadius: isZenMode ? "0" : "8px", border: isZenMode ? "none" : "1px solid var(--glass-border)", borderLeft: "none" }}>
-                                  <h4 style={{ color: "var(--accent)", margin: "0 0 10px 0", borderBottom: "1px solid #333", paddingBottom: "5px" }}>RAM Visualization</h4>
-                                  <div style={{ flex: 1, overflowY: "auto", fontFamily: "'Courier New', monospace", fontSize: "0.8rem", color: "#ccc" }}>
-                                      <div style={{ marginBottom: "15px" }}>
-                                          <div style={{ color: "#fff", fontWeight: "bold", marginBottom: "5px" }}>STACK <span style={{color:"#4ade80", fontSize:"0.7rem"}}>0x7ffe..</span></div>
-                                          <div style={{ paddingLeft: "8px", borderLeft: "2px solid #4ade80", display: "flex", flexDirection: "column", gap: "4px" }}>
-                                              <div style={{display:"flex", justifyContent:"space-between"}}><span>int main()</span></div>
-                                              <div style={{display:"flex", justifyContent:"space-between", background:"#222", padding:"2px"}}><span>int x</span><span>10</span></div>
-                                          </div>
-                                      </div>
-                                      <div>
-                                          <div style={{ color: "#fff", fontWeight: "bold", marginBottom: "5px" }}>HEAP <span style={{color:"#f6ad55", fontSize:"0.7rem"}}>Dynamic</span></div>
-                                          <div style={{ padding: "10px", border: "1px dashed #444", textAlign: "center", color: "#666" }}>[Empty]</div>
-                                      </div>
-                                  </div>
-                              </div>
-                            </>
-                        )}
-                    </div>
-
-                    {!isZenMode && <div className="resizer-horizontal" onMouseDown={() => { setIsResizingTerminal(true); document.body.style.cursor = 'row-resize'; }}></div>}
-
-                    <div style={{ 
-                        height: isTerminalMinimized ? "45px" : (isZenMode ? "250px" : terminalHeight), 
-                        minHeight: "45px", 
-                        display: "flex", 
-                        flexDirection: "column", 
-                        transition: "height 0.2s ease",
-                        ...(isZenMode ? {
-                          position: "absolute",
-                          bottom: "20px",
-                          left: "20px",
-                          width: "calc(100% - 40px)",
-                          zIndex: 100,
-                          backgroundColor: "var(--bg-color)", 
-                          borderRadius: "8px",
-                          border: "1px solid var(--glass-border)",
-                          boxShadow: "0 20px 40px rgba(0,0,0,0.5)",
-                          padding: "10px"
-                        } : {})
-                    }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: "5px" }}>
-                            <span style={{ fontSize: "0.75rem", color: "var(--text-main)", fontWeight: "bold", letterSpacing: "1px", display: "flex", alignItems: "center", gap: "15px" }}>
-                              TERMINAL
-                              <button 
-                                onClick={() => setIsTerminalMinimized(!isTerminalMinimized)} 
-                                style={{ background: "var(--glass-border)", border: "1px solid var(--accent)", color: "var(--accent)", cursor: "pointer", fontSize: "0.7rem", fontWeight: "bold", padding: "4px 8px", borderRadius: "4px" }}
-                              >
-                                {isTerminalMinimized ? "▲ EXPAND" : "▼ MINIMIZE"}
-                              </button>
-                            </span>
-                            <button className="logic-btn" onClick={handleRunCode} disabled={isCompiling} style={{ padding: "4px 12px", fontSize: "0.8rem", width: "auto" }}>{isCompiling ? "..." : "▶ RUN CODE"}</button>
-                        </div>
-                        {!isTerminalMinimized && (
-                          <div className="terminal-window" style={{ flex: 1, margin: 0, borderRadius: "4px" }}>
-                              <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{consoleOutput}</pre>
-                          </div>
-                        )}
-                    </div>
-                </div>
+                <CodeWorkspace
+                    code={currentSpace.code}
+                    onCodeChange={handleCodeChange}
+                    isZenMode={isZenMode}
+                    chatWidth={chatWidth}
+                />
             )}
 
             {whiteboardMode === 'memory map' && (
@@ -555,61 +364,13 @@ function FocusRoom({ isDarkTheme, toggleTheme, levelUp }) {
         {!isZenMode && <div className="resizer-vertical" onMouseDown={() => { setIsResizingChat(true); document.body.style.cursor = 'col-resize'; }}></div>}
 
         {(!isZenMode || isZenChatOpen) && (
-          <div 
-            className={!isZenMode ? "chat-zone" : ""}
-            style={{ 
-              display: "flex", 
-              flexDirection: "column", 
-              overflow: "hidden",
-              ...(isZenMode ? {
-                position: "absolute",
-                top: "80px",
-                right: "20px",
-                bottom: "20px", 
-                zIndex: 105,
-                width: "350px",
-                borderRadius: "8px",
-                backgroundColor: "var(--bg-color)", 
-                border: "1px solid var(--glass-border)",
-                boxShadow: "-10px 10px 30px rgba(0,0,0,0.8)"
-              } : {
-                width: chatWidth, 
-                minWidth: "250px"
-              })
-            }}
-          >
-            <div className="chat-header" style={{ backgroundColor: "var(--bg-color)", borderTopLeftRadius: "8px", borderTopRightRadius: "8px", padding: "15px", borderBottom: "1px solid var(--glass-border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "5px", flex: 1 }}>
-                  {isRenaming ? (
-                    <>
-                      <input type="text" value={renameVal} onChange={(e) => setRenameVal(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && saveThreadName()} onBlur={() => setTimeout(saveThreadName, 150)} autoFocus style={{ backgroundColor: "var(--bg-color)", color: "var(--text-main)", border: "1px solid var(--accent)", padding: "4px 8px", borderRadius: "4px", outline: "none", fontSize: "0.8rem", flex: 1, maxWidth: "150px" }} />
-                      <button onClick={saveThreadName} style={{ background: "none", border: "none", cursor: "pointer", color: "#68d391", padding: "0 5px" }} title="Save">✔</button>
-                    </>
-                  ) : (
-                    <>
-                      <select value={currentSpace.activeThreadId} onChange={(e) => handleSwitchThread(Number(e.target.value))} style={{ backgroundColor: "var(--bg-color)", color: "var(--text-main)", border: "1px solid var(--glass-border)", padding: "4px", borderRadius: "4px", outline: "none", fontSize: "0.8rem", maxWidth: "150px" }}>
-                        {currentSpace.threads.map(t => <option key={t.id} value={t.id} style={{ backgroundColor: "var(--bg-color)" }}>{t.title}</option>)}
-                      </select>
-                      <button onClick={handleRenameThread} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", padding: "0 5px" }} title="Rename Thread">✎</button>
-                      <button onClick={handleDeleteThread} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--accent)", padding: "0 5px", fontSize: "1rem" }} title="Delete Thread">🗑</button>
-                    </>
-                  )}
-              </div>
-              <button className="logic-btn" onClick={handleNewThread} style={{ padding: "6px 12px", fontSize: "0.75rem", width: "auto" }}>+ NEW</button>
-            </div>
-            
-            <div className="chat-history" style={{ backgroundColor: "var(--bg-color)", flex: 1, padding: "20px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "15px" }}>
-              {activeMessages.map((msg, index) => (
-                <div key={index} className={`message ${msg.role === 'ai' ? 'ai-message' : 'user-message'}`} style={{ whiteSpace: "pre-wrap", color: "var(--text-main)" }}>{msg.text}</div>
-              ))}
-              {isTyping && <div className="message ai-message" style={{ color: "var(--text-main)" }}>...</div>}
-            </div>
-            
-            <div className="chat-input-area" style={{ backgroundColor: "var(--bg-color)", padding: "15px", borderTop: "1px solid var(--glass-border)", display: "flex", gap: "10px", borderBottomLeftRadius: "8px", borderBottomRightRadius: "8px" }}>
-              <input type="text" placeholder="Ask AI..." value={currentQuery} onChange={(e) => setCurrentQuery(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSend()} style={{ backgroundColor: "var(--bg-color)", color: "var(--text-main)", flex: 1, border: "1px solid var(--glass-border)", padding: "12px", borderRadius: "4px", outline: "none" }} />
-              <button className="logic-btn" onClick={handleSend} style={{ width: "auto" }}>SEND</button>
-            </div>
-          </div>
+          <TerminalChat
+            currentSpace={currentSpace}
+            chatWidth={chatWidth}
+            isZenMode={isZenMode}
+            isZenChatOpen={isZenChatOpen}
+            onUpdateSpace={handleUpdateSpace}
+          />
         )}
 
       </div>

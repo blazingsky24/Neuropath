@@ -1,27 +1,28 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import './Quiz.css' 
 
-function Quiz({ isDarkTheme, toggleTheme }) { 
+function Quiz() { 
   const [step, setStep] = useState(0)
   const [isFinished, setIsFinished] = useState(false) 
+  const [isAnalyzing, setIsAnalyzing] = useState(false) 
   const [selectedAnswers, setSelectedAnswers] = useState([])
   
   const navigate = useNavigate()
 
   const questions = [
     {
-      q: "Level 1: What is the output of 'cout << (5 > 3);' in C++?",
+      q: <span>Level 1: What is the output of <code className="inline-code">cout &lt;&lt; (5 &gt; 3);</code> in C++?</span>,
       options: ["5", "1", "True", "0"],
       answer: 1 
     },
     {
-      q: "Level 2: Which operator is used to access the memory address of a variable?",
+      q: <span>Level 2: Which operator is used to access the memory address of a variable?</span>,
       options: ["*", "&", "%", "->"],
       answer: 1 
     },
     {
-      q: "Level 3: In a dynamically allocated array, what keyword frees the memory?",
+      q: <span>Level 3: In a dynamically allocated array, what keyword frees the memory?</span>,
       options: ["delete[]", "free()", "remove", "clear"],
       answer: 0 
     }
@@ -41,10 +42,21 @@ function Quiz({ isDarkTheme, toggleTheme }) {
     if (step < questions.length - 1) {
       setStep(step + 1)
     } else {
-      setIsFinished(true) 
+      setIsAnalyzing(true)
     }
   }
 
+  useEffect(() => {
+    if (isAnalyzing) {
+      const timer = setTimeout(() => {
+        setIsFinished(true)
+        setIsAnalyzing(false)
+      }, 2000) 
+      return () => clearTimeout(timer)
+    }
+  }, [isAnalyzing])
+
+  // Kept this function so your AI can still use it silently in the background!
   const determineRank = () => {
     let finalScore = 0;
     selectedAnswers.forEach((ans, index) => {
@@ -56,29 +68,18 @@ function Quiz({ isDarkTheme, toggleTheme }) {
     return "NOVICE (GRADE 4)"
   }
 
-  const themeButton = (
-    <button 
-      className="logic-btn" 
-      onClick={toggleTheme} 
-      title={isDarkTheme ? "Switch to Canvas" : "Switch to Ink"}
-      style={{ 
-        position: 'absolute', top: '20px', right: '20px', zIndex: 100,
-        width: '45px', height: '45px', borderRadius: '50%', 
-        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 
-      }}
-    >
-      {isDarkTheme ? (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
-        </svg>
-      ) : (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
-        </svg>
-      )}
-    </button>
-  );
+  // UI: THE LOADING SCREEN
+  if (isAnalyzing) {
+    return (
+      <div className="quiz-glass analyzing-container">
+         <div className="spinner"></div>
+         <h2 className="analyzing-text">ANALYZING NEURAL PATHWAYS...</h2>
+         <p className="analyzing-sub">Calibrating adaptive learning curve</p>
+      </div>
+    )
+  }
 
+  // UI: THE RESULTS SCREEN
   if (isFinished === true) {
     let correctCount = 0;
     selectedAnswers.forEach((ans, index) => {
@@ -88,60 +89,73 @@ function Quiz({ isDarkTheme, toggleTheme }) {
     const accuracy = Math.round((correctCount / questions.length) * 100);
 
     return (
-      <>
-        {themeButton}
-        <div className="quiz-glass">
-          <h2 style={{ color: "var(--accent)", letterSpacing: "2px", textTransform: "uppercase" }}>Diagnostic Report</h2>
-          <div className="stats-container">
-            <div className="stat-box">
-              <span className="stat-label">Accuracy</span>
-              <span className="stat-value" style={{ textShadow: "0 0 15px var(--accent-glow)" }}>{accuracy}%</span>
-            </div>
+      <div className="quiz-glass">
+        <div className="status-badge">DIAGNOSTIC COMPLETE</div>
 
-            <div className="stat-box">
-              <span className="stat-label">Correct</span>
-              <span className="stat-value" style={{ color: "#68d391", textShadow: "0 0 15px rgba(104, 211, 145, 0.3)" }}>{correctCount}</span>
-            </div>
-
-            <div className="stat-box">
-              <span className="stat-label">Errors</span>
-              <span className="stat-value" style={{ color: "var(--accent)", textShadow: "0 0 15px var(--accent-glow)" }}>{incorrectCount}</span>
-            </div>
+        <div className="stats-container">
+          <div className="stat-box">
+            <span className="stat-label">Accuracy</span>
+            <span className="stat-value">{accuracy}%</span>
           </div>
-
-          <button onClick={() => navigate('/hub')} className="logic-btn" style={{ width: "100%" }}>
-            ENTER NEUROPATH
-          </button>
+          <div className="stat-box">
+            <span className="stat-label">Correct</span>
+            <span className="stat-value success">{correctCount}</span>
+          </div>
+          <div className="stat-box">
+            <span className="stat-label">Errors</span>
+            <span className="stat-value error">{incorrectCount}</span>
+          </div>
         </div>
-      </>
+
+        <button onClick={() => navigate('/hub')} className="logic-btn full-width">
+          INITIALIZE TRAINING
+        </button>
+      </div>
     )
   }
 
+  // UI: THE QUESTION SCREEN
+  const progressPercentage = ((step + 1) / questions.length) * 100;
+
   return (
-    <>
-      {themeButton}
-      <div className="quiz-glass">
-        <p style={{ color: "var(--text-muted)", textAlign: "left", marginBottom: "10px", fontWeight: "bold" }}>QUESTION 0{step + 1} // 0{questions.length}</p>
-        <h2 style={{ fontSize: "1.4rem", color: "var(--text-main)", marginBottom: "20px" }}>{questions[step].q}</h2>
-        <div className="options-grid">
-          {questions[step].options.map((opt, index) => (
-            <button 
-              key={index} 
-              onClick={() => handleSelect(index)} 
-              className={`option-btn ${selectedAnswers[step] === index ? "selected" : ""}`}
-            >
-              {opt}
-            </button>
-          ))}
+    <div className="quiz-glass">
+      
+      <div className="quiz-header">
+        <div className="quiz-meta">
+            <span className="system-ping"></span>
+            <span className="step-counter">DIAGNOSTIC {step + 1} // {questions.length}</span>
         </div>
-        <div className="nav-bar">
-          {step > 0 ? <button onClick={handlePrev} className="logic-btn">PREV</button> : <div></div>}
-          <button onClick={handleNext} className="logic-btn" disabled={selectedAnswers[step] == null}>
-            {step === questions.length - 1 ? "SUBMIT ANALYSIS" : "NEXT"}
-          </button>
+        <div className="progress-bar-container">
+            <div className="progress-bar-fill" style={{ width: `${progressPercentage}%` }}></div>
         </div>
       </div>
-    </>
+
+      <h2 className="question-text">{questions[step].q}</h2>
+      
+      <div className="options-grid">
+        {questions[step].options.map((opt, index) => (
+          <button 
+            key={index} 
+            onClick={() => handleSelect(index)} 
+            className={`option-btn ${selectedAnswers[step] === index ? "selected" : ""}`}
+          >
+            <span className="opt-letter">{['A', 'B', 'C', 'D'][index]}</span>
+            {opt}
+          </button>
+        ))}
+      </div>
+
+      <div className="nav-bar">
+        {step > 0 ? <button onClick={handlePrev} className="logic-btn outline">PREV</button> : <div></div>}
+        <button 
+          onClick={handleNext} 
+          className="logic-btn" 
+          disabled={selectedAnswers[step] == null}
+        >
+          {step === questions.length - 1 ? "SUBMIT ANALYSIS" : "NEXT"}
+        </button>
+      </div>
+    </div>
   )
 }
 

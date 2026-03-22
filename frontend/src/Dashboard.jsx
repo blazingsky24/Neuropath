@@ -2,11 +2,11 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import './Dashboard.css'
 
-function Dashboard({ userLevel, isDarkTheme, toggleTheme }) {
+function Dashboard({ userLevel }) {
   const navigate = useNavigate()
   const [warning, setWarning] = useState("")
 
-const skillTree = [
+  const skillTree = [
     { id: "intro", title: "Introduction & Syntax", reqLevel: 0 },
     { id: "pointers", title: "Pointers & Memory", reqLevel: 1 },
     { id: "arrays", title: "Arrays & Strings", reqLevel: 2 },
@@ -37,10 +37,6 @@ const skillTree = [
           </div>
           <div style={{ width: "40px", height: "40px", borderRadius: "50%", border: "2px solid var(--accent)", background: "var(--glass-border)" }}></div>
           
-          {/* THE RESTORED SETTINGS GEAR */}
-          <button className="logic-btn" onClick={toggleTheme} style={{ width: "35px", height: "35px", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>
-            {isDarkTheme ? "🌙" : "☀️"}
-          </button>
           <button className="logic-btn" style={{ padding: "6px 12px", fontSize: "0.8rem" }}>⚙️</button>
         </div>
       </div>
