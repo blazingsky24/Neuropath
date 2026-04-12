@@ -37,14 +37,14 @@
   letter-spacing: 3px;
   text-transform: uppercase;
   color: var(--text-main) !important;
-  margin-bottom: 40px;
+  margin-bottom: 30px; 
 }
 
 .skill-tree {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 30px;
+  gap: 20px; 
   position: relative;
 }
 
@@ -64,7 +64,7 @@
   background: var(--bg-color) !important;
   border: 2px solid var(--glass-border) !important;
   color: var(--text-main) !important;
-  padding: 15px 30px;
+  padding: 18px 30px; 
   border-radius: 30px;
   font-family: var(--font-heading) !important;
   font-size: 1.1rem;
@@ -85,10 +85,21 @@
   color: #1a1a1a !important;
 }
 
+.node-btn.decayed {
+  border-color: #f6ad55 !important;
+  box-shadow: 0 0 15px rgba(246, 173, 85, 0.2);
+}
+
+.node-btn.decayed:hover {
+  background: #f6ad55 !important;
+  color: #1a1a1a !important;
+}
+
 .node-btn.locked {
   opacity: 0.6;
   cursor: not-allowed;
 }
+
 
 .crimson-warning {
   position: absolute;

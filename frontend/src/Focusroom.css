@@ -22,8 +22,8 @@
 .whiteboard-zone {
   display: flex;
   flex-direction: column;
-  padding: 0; 
-  overflow: hidden; 
+  padding: 0;
+  overflow: hidden;
   background: rgba(255, 255, 255, 0.02);
 }
 
@@ -88,7 +88,10 @@
   border-left: 1px solid var(--glass-border);
 }
 
-.resizer-vertical:hover, .resizer-vertical.active { background: var(--accent); }
+.resizer-vertical:hover,
+.resizer-vertical.active {
+  background: var(--accent);
+}
 
 .resizer-horizontal {
   height: 5px;
@@ -100,7 +103,10 @@
   margin: 5px 0;
 }
 
-.resizer-horizontal:hover, .resizer-horizontal.active { background: var(--accent); }
+.resizer-horizontal:hover,
+.resizer-horizontal.active {
+  background: var(--accent);
+}
 
 .memory-panel {
   background: #0f0f11 !important;
@@ -111,8 +117,15 @@
 }
 
 @keyframes slideInRight {
-  from { width: 0; opacity: 0; }
-  to { width: 250px; opacity: 1; }
+  from {
+    width: 0;
+    opacity: 0;
+  }
+
+  to {
+    width: 250px;
+    opacity: 1;
+  }
 }
 
 .terminal-window {
@@ -124,29 +137,81 @@
   font-family: 'Courier New', Courier, monospace !important;
   font-size: 0.9rem;
   overflow-y: auto;
-  box-shadow: inset 0 0 20px rgba(0,0,0,0.5);
+  box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.5);
 }
 
 .chat-zone {
   display: flex;
   flex-direction: column;
-  background: rgba(0,0,0,0.02) !important;
+  background: rgba(0, 0, 0, 0.02) !important;
   overflow: hidden;
 }
 
-.chat-history { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 15px; }
-.message { max-width: 85%; padding: 12px 16px; border-radius: 8px; font-size: 0.95rem; line-height: 1.5; font-family: var(--font-body) !important; width: fit-content; }
-.ai-message { align-self: flex-start; background: var(--glass-border) !important; border: 1px solid var(--glass-border) !important; color: var(--text-main) !important; border-top-left-radius: 0; }
-.user-message { align-self: flex-end; background: transparent !important; border: 1px solid var(--accent) !important; color: var(--text-main) !important; border-bottom-right-radius: 0; box-shadow: inset 0 0 10px var(--accent-glow); }
+.chat-history {
+  flex: 1;
+  padding: 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
 
-.chat-header { 
-  padding: 15px; 
-  border-bottom: 1px solid var(--glass-border) !important; 
-  display: flex; 
-  justify-content: space-between; 
-  align-items: center; 
+.message {
+  max-width: 85%;
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  font-family: var(--font-body) !important;
+  width: fit-content;
+}
+
+.ai-message {
+  align-self: flex-start;
+  background: var(--glass-border) !important;
+  border: 1px solid var(--glass-border) !important;
+  color: var(--text-main) !important;
+  border-top-left-radius: 0;
+}
+
+.user-message {
+  align-self: flex-end;
+  background: transparent !important;
+  border: 1px solid var(--accent) !important;
+  color: var(--text-main) !important;
+  border-bottom-right-radius: 0;
+  box-shadow: inset 0 0 10px var(--accent-glow);
+}
+
+.chat-header {
+  padding: 15px;
+  border-bottom: 1px solid var(--glass-border) !important;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   background: var(--bg-color);
 }
-.chat-input-area { display: flex; padding: 15px; border-top: 1px solid var(--glass-border) !important; gap: 10px; background: var(--bg-color); }
-.chat-input-area input { flex: 1; background: transparent !important; border: 1px solid var(--glass-border) !important; color: var(--text-main) !important; padding: 12px; border-radius: 4px; outline: none; font-family: var(--font-body) !important; }
-.chat-input-area input:focus { border-color: var(--accent) !important; box-shadow: 0 0 10px var(--accent-glow) !important; }
+
+.chat-input-area {
+  display: flex;
+  padding: 15px;
+  border-top: 1px solid var(--glass-border) !important;
+  gap: 10px;
+  background: var(--bg-color);
+}
+
+.chat-input-area input {
+  flex: 1;
+  background: transparent !important;
+  border: 1px solid var(--glass-border) !important;
+  color: var(--text-main) !important;
+  padding: 12px;
+  border-radius: 4px;
+  outline: none;
+  font-family: var(--font-body) !important;
+}
+
+.chat-input-area input:focus {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 10px var(--accent-glow) !important;
+}

@@ -1,228 +1,459 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import mermaid from 'mermaid'
 import TerminalChat from './components/TerminalChat'
 import CodeWorkspace from './components/CodeWorkspace'
+import QuizModal from './components/QuizModal';
+import ExamModal from './components/ExamModal';
+import ReadingMaterial from './components/ReadingMaterial';
+import useChatResizer from "./hooks/useChatResizer";
 import './FocusRoom.css'
+import MermaidViewer from './MermaidViewer';
 
-function FocusRoom({ levelUp }) {
+const evaluateMasteryCode = async (userCode, challengePrompt) => {
+  const graderPrompt = `[SYSTEM COMMAND: Activate <code_grader> mode. Evaluate the following C++ code.
+Challenge: ${challengePrompt}
+Rules: 
+1. Check if the logic is correct.
+2. Ignore minor syntax errors if the core logic is perfectly sound.
+3. Return ONLY a valid JSON object. No markdown, no backticks, no explanations outside the JSON.
+Format: {"passed": true/false, "feedback": "1 sentence explanation"} ]
+
+Code to evaluate:
+${userCode}`;
+
+  try {
+    const response = await fetch('http://localhost:5000/api/compiler/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        topic: "Mastery Evaluation",
+        history: [{ role: 'user', text: graderPrompt }]
+      })
+    });
+
+    const data = await response.json();
+    let reply = data.reply.trim();
+
+    if (reply.startsWith("```json")) {
+      reply = reply.replace(/```json/g, "").replace(/```/g, "").trim();
+    } else if (reply.startsWith("```")) {
+      reply = reply.replace(/```/g, "").trim();
+    }
+
+    const grade = JSON.parse(reply);
+    return grade;
+
+  } catch (error) {
+    console.error("Grading failed:", error);
+    return { passed: false, feedback: "System Error: Failed to connect to the grading engine." };
+  }
+};
+
+export default function FocusRoom({ levelUp }) {
   const { topicId } = useParams()
   const navigate = useNavigate()
-  
-  const [isTakingQuiz, setIsTakingQuiz] = useState(false)
+
+  const [topicData, setTopicData] = useState(null);
+  const storedId = localStorage.getItem('neuropath_user_id');
+  const [userPfp, setUserPfp] = useState(localStorage.getItem(`neuropath_pfp_${storedId}`) || "");
+  const [userName, setUserName] = useState(""); 
+  const [isGearHovered, setIsGearHovered] = useState(false);
+
+  useEffect(() => {
+    if (storedId) {
+      fetch(`http://localhost:5000/api/users/${storedId}`)
+        .then(res => res.json())
+        .then(data => setUserName(data.name || ""))
+        .catch(err => console.error("Failed to fetch user for PFP", err));
+    }
+  }, [storedId]);
+
+  const [isTakingQuiz, setIsTakingQuiz] = useState(false);
+  const [examData, setExamData] = useState(null);
+  const [mcqAnswers, setMcqAnswers] = useState({});
+  const [examCodes, setExamCodes] = useState({});
+  const [isGrading, setIsGrading] = useState(false);
+  const [examResult, setExamResult] = useState(null);
+
+  const [isQuizModalOpen, setIsQuizModalOpen] = useState(false);
+  const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false);
+  const [quizData, setQuizData] = useState(null);
+  const [quizAnswers, setQuizAnswers] = useState({});
+  const [quizScore, setQuizScore] = useState(null);
 
   const curriculumMap = {
-    "intro": ["Syntax Basics", "Data Types", "Control Flow"],
-    "pointers": ["Pointer Basics", "Dynamic Allocation", "Smart Pointers"],
-    "arrays": ["1D Arrays", "2D Arrays", "String Manipulation"],
-    "linked_lists": ["Singly Linked", "Doubly Linked", "Circular"],
-    "stacks_queues": ["Stack Basics", "Queue Basics", "Advanced Queues"], 
-    "trees": ["Binary Trees", "BST", "Heaps"]
+    "fundamentals": ["Basic Syntax", "Data Types", "Control Flow"],
+    "arrays_strings": ["1D Arrays", "2D Arrays", "String Manipulation"],
+    "memory_pointers": ["Pointer Basics", "Dynamic Allocation", "Smart Pointers"],
+    "oop": ["Oops Basic", "Oops Four Pillar", "Oops And Pointers"],
+    "linked_lists": ["Singly Linked List", "Doubly Linked List", "Circular Linked List"],
+    "stacks_queues": ["Stack", "Queues", "Advanced Queues"],
+    "trees_heaps": ["Tree Basics", "Binary Search Tree", "Heaps"],
+    "graphs": ["Graphs", "Graph Algorithms", "Advanced Graph"]
   }
 
   const defaultCode = {
-    "Syntax Basics": "// 1. Syntax Basics\n#include <iostream>\nusing namespace std;\n\nint main() {\n    cout << \"Hello World\";\n    return 0;\n}",
-    "Data Types": "#include <iostream>\nusing namespace std;\n\nint main() {\n    int num = 10;\n    float pi = 3.14;\n    char letter = 'A';\n    cout << num << \" \" << pi << \" \" << letter;\n    return 0;\n}",
-    "Control Flow": "#include <iostream>\nusing namespace std;\n\nint main() {\n    for(int i = 0; i < 5; i++) {\n        cout << i << \" \";\n    }\n    return 0;\n}",
-    "Pointer Basics": "#include <iostream>\nusing namespace std;\n\nint main() {\n    int val = 42;\n    int* ptr = &val;\n    cout << *ptr;\n    return 0;\n}",
-    "Dynamic Allocation": "#include <iostream>\nusing namespace std;\n\nint main() {\n    int* arr = new int[5];\n    delete[] arr;\n    return 0;\n}",
-    "Smart Pointers": "#include <iostream>\n#include <memory>\nusing namespace std;\n\nint main() {\n    unique_ptr<int> ptr = make_unique<int>(100);\n    cout << *ptr;\n    return 0;\n}",
-    "1D Arrays": "#include <iostream>\nusing namespace std;\n\nint main() {\n    int arr[5] = {1, 2, 3, 4, 5};\n    cout << arr[0];\n    return 0;\n}",
-    "2D Arrays": "#include <iostream>\nusing namespace std;\n\nint main() {\n    int matrix[2][2] = {{1, 2}, {3, 4}};\n    cout << matrix[0][0];\n    return 0;\n}",
-    "String Manipulation": "#include <iostream>\n#include <string>\nusing namespace std;\n\nint main() {\n    string str = \"NeuroPath\";\n    cout << str.length();\n    return 0;\n}",
-    "Singly Linked": "#include <iostream>\nusing namespace std;\n\nstruct Node {\n    int data;\n    Node* next;\n};\n\nint main() {\n    Node* head = new Node{1, nullptr};\n    return 0;\n}",
-    "Doubly Linked": "#include <iostream>\nusing namespace std;\n\nstruct Node {\n    int data;\n    Node* prev;\n    Node* next;\n};\n\nint main() {\n    return 0;\n}",
-    "Circular": "#include <iostream>\nusing namespace std;\n\nstruct Node {\n    int data;\n    Node* next;\n};\n\nint main() {\n    return 0;\n}",
-    "Binary Trees": "#include <iostream>\nusing namespace std;\n\nstruct TreeNode {\n    int val;\n    TreeNode* left;\n    TreeNode* right;\n};\n\nint main() {\n    return 0;\n}",
-    "BST": "#include <iostream>\nusing namespace std;\n\nstruct TreeNode {\n    int val;\n    TreeNode* left;\n    TreeNode* right;\n};\n\nint main() {\n    return 0;\n}",
-    "Heaps": "#include <iostream>\n#include <queue>\nusing namespace std;\n\nint main() {\n    priority_queue<int> pq;\n    pq.push(10);\n    return 0;\n}",
-    "Stack Basics": "#include <iostream>\n#include <stack>\nusing namespace std;\n\nint main() {\n    stack<int> s;\n    s.push(10);\n    cout << s.top();\n    return 0;\n}",
-    "Queue Basics": "#include <iostream>\n#include <queue>\nusing namespace std;\n\nint main() {\n    queue<int> q;\n    q.push(10);\n    cout << q.front();\n    return 0;\n}",
-    "Advanced Queues": "#include <iostream>\n#include <queue>\nusing namespace std;\n\nint main() {\n    priority_queue<int> pq;\n    pq.push(10);\n    cout << pq.top();\n    return 0;\n}"
-  }
-
-  const flowcharts = {
-    "Syntax Basics": `graph TD\n    A["Start"] --> B["#include &lt;iostream&gt;"]\n    B --> C["using namespace std;"]\n    C --> D["int main()"]\n    D --> E["cout << 'Hello World';"]\n    E --> F["return 0;"]\n    F --> G["End"]`,
-    "Data Types": `graph LR\n    A["Data Types"] --> B("Primitive")\n    A --> C("Derived")\n    A --> D("User-Defined")\n    B --> E["int, float, char, bool"]\n    C --> F["Array, Pointer, Reference"]\n    D --> G["Class, Struct, Enum"]`,
-    "Control Flow": `graph TD\n    A["Start"] --> B{"Condition True?"}\n    B -- Yes --> C["Execute Block"]\n    C --> A\n    B -- No --> D["Exit Loop"]`,
-    "Pointer Basics": `graph LR\n    A["Variable (val = 42)"] -->|Memory Address| B["Pointer (*ptr)"]\n    B -->|Dereference| C["Value (42)"]`,
-    "Dynamic Allocation": `graph TD\n    A["Start"] --> B["new int[5]"]\n    B --> C{"Use Array"}\n    C --> D["delete[] arr"]\n    D --> E["Memory Freed (Heap)"]`,
-    "Smart Pointers": `graph LR\n    A["Smart Pointer"] --> B("unique_ptr")\n    A --> C("shared_ptr")\n    A --> D("weak_ptr")\n    B --> E["Exclusive Ownership"]\n    C --> F["Shared Ownership (Ref Count)"]`,
-    "1D Arrays": `graph LR\n    A["arr[0]"] --- B["arr[1]"] --- C["arr[2]"] --- D["arr[3]"] --- E["arr[4]"]`,
-    "2D Arrays": `graph TD\n    A["Row 0"] --> B["[0][0]"] & C["[0][1]"]\n    D["Row 1"] --> E["[1][0]"] & F["[1][1]"]`,
-    "String Manipulation": `graph LR\n    A["std::string"] --> B["length()"] & C["append()"] & D["substr()"]`,
-    "Singly Linked": `graph LR\n    A["Head"] -->|next| B["Node 1"] -->|next| C["Node 2"] -->|next| D["nullptr"]`,
-    "Doubly Linked": `graph LR\n    A["Node 1"] <-->|next & prev| B["Node 2"] <-->|next & prev| C["Node 3"]`,
-    "Circular": `graph LR\n    A["Head"] --> B["Node 1"] --> C["Node 2"] --> D["Node 3"]\n    D -->|next points to Head| A`,
-    "Binary Trees": `graph TD\n    A["Root"] --> B["Left Child"] & C["Right Child"]\n    B --> D["Leaf"] & E["Leaf"]`,
-    "BST": `graph TD\n    A["Root (50)"] --> B["Left (&lt; 50)"] & C["Right (&gt; 50)"]\n    B --> D["30"]\n    C --> E["70"]`,
-    "Heaps": `graph TD\n    A["Max Heap Root (100)"] --> B["Child (80)"] & C["Child (90)"]\n    B --> D["Leaf (40)"] & E["Leaf (50)"]`,
-    "Stack Basics": `graph TD\n    A["Empty Stack"] --> B["push(10)"]\n    B --> C["push(20)"]\n    C --> D["Top: 20"]\n    D --> E["pop()"]\n    E --> F["Top: 10"]`,
-    "Queue Basics": `graph LR\n    A["Back"] --> B["push(20)"] --> C["10"] --> D["Front"]\n    D --> E["pop() removes 10"]`,
-    "Advanced Queues": `graph TD\n    A["push(30), push(10), push(50)"] --> B["Priority Queue"]\n    B --> C["Top is 50"]\n    C --> D["pop() removes 50"]`
-  }
-
-  const mindmaps = {
-    "Syntax Basics": `mindmap\n  root((Syntax Basics))\n    Structure\n      Include\n      namespace\n      int main\n    I/O\n      cout\n      cin\n    Rules\n      Semicolons\n      Return 0`,
-    "Data Types": `mindmap\n  root((Data Types))\n    Primitives\n      int\n      float\n      char\n      bool\n    Modifiers\n      unsigned\n      long\n      short`,
-    "Control Flow": `mindmap\n  root((Control Flow))\n    Conditionals\n      If Else\n      switch\n    Loops\n      for\n      while\n      Do While\n    Jumps\n      break\n      continue`,
-    "Pointer Basics": `mindmap\n  root((Pointers))\n    Memory Addresses\n      Address Of\n      Hexadecimal\n    Dereferencing\n      Value At\n      Accessing Data\n    Types\n      Null Pointers\n      Void Pointers`,
-    "Dynamic Allocation": `mindmap\n  root((Dynamic Memory))\n    Heap vs Stack\n      Manual Lifetime\n      Larger Pool\n    Operators\n      new\n      delete\n      new array\n      delete array\n    Risks\n      Memory Leaks\n      Dangling Pointers`,
-    "Smart Pointers": `mindmap\n  root((Smart Pointers))\n    Header\n      memory header\n    unique ptr\n      Exclusive Ownership\n    shared ptr\n      Reference Counting\n    weak ptr\n      Breaks Cyclic References`,
-    "1D Arrays": `mindmap\n  root((1D Arrays))\n    Characteristics\n      Fixed Size\n      Contiguous Memory\n      Zero Indexed\n    Operations\n      Traversal\n      Insertion\n      Deletion`,
-    "2D Arrays": `mindmap\n  root((2D Arrays))\n    Structure\n      Rows and Columns\n      Matrices\n    Memory\n      Row Major Order\n    Access\n      matrix row col`,
-    "String Manipulation": `mindmap\n  root((Strings))\n    std string\n      Dynamic Size\n    Operations\n      Concatenation\n      append\n      substr\n      length\n    Search\n      find`,
-    "Singly Linked": `mindmap\n  root((Singly Linked))\n    Node Structure\n      Data\n      Next Pointer\n    Key Pointers\n      Head\n      Tail\n    Operations\n      Traversal\n      Insert at Head`,
-    "Doubly Linked": `mindmap\n  root((Doubly Linked))\n    Node Structure\n      Prev Pointer\n      Data\n      Next Pointer\n    Advantages\n      Bidirectional Traversal\n      Easier Deletion\n    Disadvantages\n      Extra Memory\n      Complex Updates`,
-    "Circular": `mindmap\n  root((Circular List))\n    Structure\n      Tail points to Head\n      No NULL at end\n    Variations\n      Singly Circular\n      Doubly Circular\n    Use Cases\n      Round Robin Scheduling`,
-    "Stack Basics": `mindmap\n  root((Stacks))\n    Concept\n      LIFO\n      Push\n      Pop\n      Peek\n    Implementations\n      Arrays\n      Linked Lists\n    Use Cases\n      Undo\n      Call Stack\n      Brackets`,
-    "Queue Basics": `mindmap\n  root((Queues))\n    Concept\n      FIFO\n      Enqueue\n      Dequeue\n    Implementations\n      Arrays\n      Linked Lists\n    Use Cases\n      Spooling\n      Scheduling`,
-    "Advanced Queues": `mindmap\n  root((Advanced Queues))\n    Priority Queue\n      Heaps\n      Dijkstra\n    Deque\n      Double ended\n      Insert Both\n      Remove Both`,
-    "Binary Trees": `mindmap\n  root((Binary Trees))\n    Structure\n      Root\n      Left Child\n      Right Child\n      Leaves\n    Traversals\n      Inorder\n      Preorder\n      Postorder`,
-    "BST": `mindmap\n  root((BST))\n    Properties\n      Left Less Than Root\n      Right Greater Than Root\n    Time Complexity\n      Search Log N\n    Balancing\n      AVL\n      Red Black`,
-    "Heaps": `mindmap\n  root((Heaps))\n    Types\n      Max Heap\n      Min Heap\n    Properties\n      Complete Tree\n      Heap Order\n    Applications\n      Priority Queues\n      Heap Sort`
+    "Basic Syntax": "#include <iostream>\nusing namespace std;\n\nint main() {\n    cout << \"Hello from C++!\" << endl;\n    return 0;\n}",
+    "Data Types": "#include <iostream>\nusing namespace std;\n\nint main() {\n    int a = 100;\n    float b = 3.14159f;\n    char d = 'X';\n    bool e = true;\n    return 0;\n}",
+    "Control Flow": "#include <iostream>\nusing namespace std;\n\nint main() {\n    int age = 18;\n    if (age >= 18) cout << \"You are an adult.\" << endl;\n    return 0;\n}",
+    "1D Arrays": "#include <iostream>\nusing namespace std;\n\nint main() {\n    int scores[5] = {90, 85, 78, 92, 88};\n    for (int i = 0; i < 5; i++) cout << scores[i] << endl;\n    return 0;\n}",
+    "2D Arrays": "#include <iostream>\nusing namespace std;\n\nint main() {\n    int matrix[2][2] = {{1, 2}, {3, 4}};\n    cout << matrix[0][0] << endl;\n    return 0;\n}",
+    "String Manipulation": "#include <iostream>\n#include <string>\nusing namespace std;\n\nint main() {\n    string str = \"Hello\";\n    cout << str << endl;\n    return 0;\n}",
+    "Pointer Basics": "#include <iostream>\nusing namespace std;\n\nint main() {\n    int x = 42;\n    int* ptr = &x;\n    cout << *ptr << endl;\n    return 0;\n}",
+    "Dynamic Allocation": "#include <iostream>\nusing namespace std;\n\nint main() {\n    int* dynArray = new int[5];\n    delete[] dynArray;\n    return 0;\n}",
+    "Smart Pointers": "#include <iostream>\n#include <memory>\nusing namespace std;\n\nint main() {\n    unique_ptr<int> p = make_unique<int>(42);\n    return 0;\n}",
+    "Oops Basic": "#include <iostream>\nusing namespace std;\n\nclass Car {\npublic:\n    string model;\n    void drive() { cout << model << \" is driving\" << endl; }\n};\n\nint main() { return 0; }",
+    "Oops Four Pillar": "#include <iostream>\nusing namespace std;\n\nclass BankAccount {\nprivate:\n    double balance;\npublic:\n    void deposit(double amount) { if(amount > 0) balance += amount; }\n};\n\nint main() { return 0; }",
+    "Oops And Pointers": "#include <iostream>\nusing namespace std;\n\nclass Base { public: virtual void show() { cout << \"Base\"; } };\nclass Derived : public Base { public: void show() override { cout << \"Derived\"; } };\n\nint main() { return 0; }",
+    "Singly Linked List": "#include <iostream>\nusing namespace std;\n\nstruct Node {\n    int data;\n    Node* next;\n    Node(int val) : data(val), next(nullptr) {}\n};\n\nint main() { return 0; }",
+    "Doubly Linked List": "#include <iostream>\nusing namespace std;\n\nstruct Node {\n    int data;\n    Node* prev;\n    Node* next;\n    Node(int val) : data(val), prev(nullptr), next(nullptr) {}\n};\n\nint main() { return 0; }",
+    "Circular Linked List": "#include <iostream>\nusing namespace std;\n\nstruct Node {\n    int data;\n    Node* next;\n    Node(int d) : data(d), next(nullptr) {}\n};\n\nint main() { return 0; }",
+    "Stack": "#include <stack>\n#include <iostream>\nusing namespace std;\n\nint main() {\n    stack<int> s;\n    s.push(10);\n    return 0;\n}",
+    "Queues": "#include <queue>\n#include <iostream>\nusing namespace std;\n\nint main() {\n    queue<int> q;\n    q.push(10);\n    return 0;\n}",
+    "Advanced Queues": "#include <deque>\n#include <iostream>\nusing namespace std;\n\nint main() {\n    deque<int> dq;\n    dq.push_front(10);\n    return 0;\n}",
+    "Tree Basics": "#include <iostream>\nusing namespace std;\n\nstruct Node {\n    int data;\n    Node* left;\n    Node* right;\n    Node(int val) : data(val), left(nullptr), right(nullptr) {}\n};\n\nint main() { return 0; }",
+    "Binary Search Tree": "struct Node {\n    int data;\n    Node *left, *right;\n};\n\nNode* insert(Node* root, int val) {\n    // BST insertion logic\n    return root;\n}",
+    "Heaps": "#include <queue>\nusing namespace std;\n\nint main() {\n    priority_queue<int, vector<int>, greater<int>> minHeap;\n    return 0;\n}",
+    "Graphs": "#include <iostream>\n#include <vector>\nusing namespace std;\n\nint main() {\n    int V = 5;\n    vector<int> adj[V];\n    return 0;\n}",
+    "Graph Algorithms": "#include <bits/stdc++.h>\nusing namespace std;\n\nvoid dijkstra(int V, vector<pair<int,int>> adj[], int src) {\n    // Shortest path logic\n}",
+    "Advanced Graph": "#include <vector>\nusing namespace std;\n\nclass DSU {\n    vector<int> parent;\npublic:\n    DSU(int n) { /* Initialization */ }\n};\n"
   }
 
   const moduleSubtopics = curriculumMap[topicId] || ["General Analysis"]
+
   const [activeSubtopic, setActiveSubtopic] = useState(moduleSubtopics[0])
 
-  const [workspaces, setWorkspaces] = useState({
-    [moduleSubtopics[0]]: {
+  const [workspaces, setWorkspaces] = useState(() => {
+    const savedData = localStorage.getItem(`neuropath_data_${topicId}`);
+    if (savedData) return JSON.parse(savedData);
+    return {
+      [moduleSubtopics[0]]: {
         code: defaultCode[moduleSubtopics[0]] || "// Write C++ logic here...",
         threads: [{ id: 1, title: "Thread 1 (General)", messages: [{ role: 'ai', text: `[SYSTEM] Workspace: ${moduleSubtopics[0].toUpperCase()}\n\nReady.` }] }],
         activeThreadId: 1
-    }
-  })
+      }
+    };
+  });
+
+  useEffect(() => {
+    localStorage.setItem(`neuropath_data_${topicId}`, JSON.stringify(workspaces));
+  }, [workspaces, topicId]);
+
+  useEffect(() => {
+    const fetchTopicData = async () => {
+      try {
+        const url = `http://localhost:5000/api/curriculum/${encodeURIComponent(activeSubtopic)}`;
+        const response = await fetch(url);
+
+        if (response.ok) {
+          const data = await response.json();
+          setTopicData(data);
+        } else {
+          setTopicData(null);
+        }
+      } catch (error) {
+        console.error("Failed to fetch curriculum data:", error);
+        setTopicData(null);
+      }
+    };
+
+    fetchTopicData();
+  }, [activeSubtopic]);
 
   const currentSpace = workspaces[activeSubtopic] || { code: "// Loading...", threads: [], activeThreadId: 1 }
 
-  const [whiteboardMode, setWhiteboardMode] = useState("code")
-  
-  const [flowchartSvg, setFlowchartSvg] = useState("")
-  const [mindmapSvg, setMindmapSvg] = useState("") 
-
-  const [chatWidth, setChatWidth] = useState(450) 
-  const [isResizingChat, setIsResizingChat] = useState(false)
-  
+  const [whiteboardMode, setWhiteboardMode] = useState("reading")
+  const [flowchartCode, setFlowchartCode] = useState("")
+  const [isProfiling, setIsProfiling] = useState(false)
+  const [chatScrollTrigger, setChatScrollTrigger] = useState(null)
   const [isZenMode, setIsZenMode] = useState(false)
-  const [isZenChatOpen, setIsZenChatOpen] = useState(false) 
-  
-  const containerRef = useRef(null)
+  const [isZenChatOpen, setIsZenChatOpen] = useState(false)
 
-  // Only the Chat Resize logic remains here
-  useEffect(() => {
-    const handleMouseMove = (e) => {
-      if (isResizingChat && containerRef.current) {
-        const containerRect = containerRef.current.getBoundingClientRect()
-        const newWidth = containerRect.right - e.clientX
-        if (newWidth > 250 && newWidth < containerRect.width * 0.6) setChatWidth(newWidth)
+  const { chatWidth, isResizingChat, setIsResizingChat, containerRef } = useChatResizer("40%");
+
+  const handleProfileCode = async () => {
+    setIsProfiling(true);
+    setFlowchartCode("");
+
+    const stealthMessage = `[SYSTEM COMMAND: Activate <code_profiler> mode. Output ONLY a valid Mermaid.js 'flowchart TD'.
+
+CRITICAL RULES:
+1. Translate the code logic into Plain English. Do NOT output raw C++ syntax (like 'for', 'cout', 'int', or '++').
+2. Connect ALL nodes properly using '-->'. Create a continuous flow.
+3. NEVER use quotes ("), parentheses (), brackets [], or math symbols (<, >) inside node labels.
+
+EXAMPLE INPUT:
+int n = 5;
+for(int i=0; i<n; i++) { count++; }
+
+EXAMPLE OUTPUT:
+flowchart TD
+  A[Set n to 5] --> B{Is i less than n}
+  B -- Yes --> C[Increment count]
+  C --> D[Increment i]
+  D --> B
+  B -- No --> E[End Loop]
+
+Now analyze this code and follow the exact format above:
+${currentSpace.code}]`;
+
+    try {
+      const response = await fetch('http://localhost:5000/api/compiler/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          topic: activeSubtopic,
+          history: [{ role: 'user', text: stealthMessage }]
+        })
+      });
+
+      const data = await response.json();
+      let extractedCode = data.reply || "";
+
+      if (extractedCode.includes("```mermaid")) {
+        extractedCode = extractedCode.split("```mermaid")[1].split("```")[0].trim();
+      } else if (extractedCode.includes("```")) {
+        extractedCode = extractedCode.split("```")[1].trim();
+        if (extractedCode.startsWith("mermaid")) extractedCode = extractedCode.substring(7).trim();
       }
-    }
-    const handleMouseUp = () => { setIsResizingChat(false); document.body.style.cursor = 'default'; }
-    
-    if (isResizingChat) { 
-      document.addEventListener('mousemove', handleMouseMove); 
-      document.addEventListener('mouseup', handleMouseUp); 
-      document.body.style.userSelect = 'none'; 
-    }
-    return () => { document.removeEventListener('mousemove', handleMouseMove); document.removeEventListener('mouseup', handleMouseUp); }
-  }, [isResizingChat, chatWidth])
 
-  useEffect(() => {
-    if (whiteboardMode !== 'flowchart' && whiteboardMode !== 'mind map') return; 
-
-    mermaid.initialize({
-      startOnLoad: false,
-      theme: 'default',
-      fontFamily: 'var(--font-body)',
-      securityLevel: 'loose', 
-    })
-    
-    const renderChart = async () => {
-      if (whiteboardMode === 'flowchart') setFlowchartSvg("")
-      if (whiteboardMode === 'mind map') setMindmapSvg("")
-
-      try {
-        let chartText = "";
-        if (whiteboardMode === 'flowchart') {
-          chartText = flowcharts[activeSubtopic] || "graph TD\n    A[Module logic pending...]"
-        } else if (whiteboardMode === 'mind map') {
-          chartText = mindmaps[activeSubtopic] || "mindmap\n  root((Pending...))"
-        }
-        
-        const { svg } = await mermaid.render(`mermaid-${Date.now()}`, chartText)
-        const imageUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
-        
-        if (whiteboardMode === 'flowchart') setFlowchartSvg(imageUrl)
-        if (whiteboardMode === 'mind map') setMindmapSvg(imageUrl)
-        
-      } catch (error) {
-        console.error("Mermaid parsing error:", error)
-        const errorSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="50"><text x="10" y="25" fill="#e53e3e" font-family="sans-serif">Syntax Error in Diagram</text></svg>`
-        const errorUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(errorSvg)}`
-        
-        if (whiteboardMode === 'flowchart') setFlowchartSvg(errorUrl)
-        if (whiteboardMode === 'mind map') setMindmapSvg(errorUrl)
+      if (!extractedCode.includes("graph") && !extractedCode.includes("flowchart")) {
+        extractedCode = "flowchart TD\n  A[Error: Lumina returned invalid format.]";
       }
-    }
 
-    renderChart()
-  }, [whiteboardMode, activeSubtopic])
+      extractedCode = extractedCode.replace(/</g, ' less than ').replace(/([^-=])>/g, '$1 greater than ').replace(/["']/g, '').replace(/[()?]/g, '');
+      setFlowchartCode(extractedCode);
+
+    } catch (error) {
+      console.error("Profiling failed:", error);
+      setFlowchartCode("flowchart TD\n  A[Error: Profiling Engine Disconnected]");
+    } finally {
+      setIsProfiling(false);
+    }
+  };
+
+  const generateThreadMap = () => {
+    const activeThread = currentSpace.threads.find(t => t.id === currentSpace.activeThreadId);
+    if (!activeThread) return `mindmap\n  root((Empty))`;
+
+    let mapString = `mindmap\n  root((${activeThread.title.replace(/[\(\)]/g, '')}))\n`;
+    const userMessages = activeThread.messages.filter(m => m.role === 'user');
+
+    if (userMessages.length === 0) {
+      mapString += `    ("No questions asked yet")\n`;
+    } else {
+      userMessages.forEach((msg, index) => {
+        let cleanText = msg.text.substring(0, 30).replace(/["'\n\(\)\[\]\{\}]/g, '').trim();
+        mapString += `    id${index}("Q${index + 1}: ${cleanText}...")\n`;
+      });
+    }
+    return mapString;
+  };
 
   const handleSubtopicChange = (newSub) => {
     if (!workspaces[newSub]) {
-        setWorkspaces(prev => ({ ...prev, [newSub]: {
-            code: defaultCode[newSub] || "// Code...",
-            threads: [{ id: 1, title: "Thread 1", messages: [{ role: 'ai', text: `[SYSTEM] Workspace: ${newSub.toUpperCase()}` }] }],
-            activeThreadId: 1
-        }}))
+      setWorkspaces(prev => ({
+        ...prev, [newSub]: {
+          code: defaultCode[newSub] || "// Code...",
+          threads: [{ id: 1, title: "Thread 1", messages: [{ role: 'ai', text: `[SYSTEM] Workspace: ${newSub.toUpperCase()}` }] }],
+          activeThreadId: 1
+        }
+      }))
     }
     setActiveSubtopic(newSub)
+    setWhiteboardMode('reading')
   }
 
   const handleCodeChange = (newCode) => setWorkspaces(prev => ({ ...prev, [activeSubtopic]: { ...prev[activeSubtopic], code: newCode } }))
 
   const handleUpdateSpace = (updatedSpace) => {
-    setWorkspaces(prev => ({
-      ...prev,
-      [activeSubtopic]: updatedSpace
-    }))
-  }
-
-  const handlePassQuiz = () => {
-    const levelRewards = { "intro": 1, "pointers": 2, "arrays": 3, "linked_lists": 4, "stacks_queues": 5, "trees": 6 };
-    levelUp(levelRewards[topicId] || 1); 
-    navigate('/hub', { replace: true }); 
+    setWorkspaces(prev => ({ ...prev, [activeSubtopic]: updatedSpace }))
   }
 
   const toggleZenMode = () => {
-    const enteringZen = !isZenMode
-    setIsZenMode(enteringZen)
-    setIsZenChatOpen(false) 
+    setIsZenMode(!isZenMode)
+    setIsZenChatOpen(false)
   }
 
-  const modeTabs = ['code', 'memory map', 'reading', 'video', 'flowchart', 'mind map'];
+  const handleGenerateQuiz = async () => {
+    setIsQuizModalOpen(true);
+    setIsGeneratingQuiz(true);
+    setQuizData(null);
+    setQuizAnswers({});
+    setQuizScore(null);
+
+    const quizPrompt = `[SYSTEM COMMAND: Activate <quiz_generator> mode. Generate exactly 5 multiple-choice questions based on this C++ topic: ${activeSubtopic}.
+    Rules:
+    1. Return ONLY a valid JSON array of objects. No markdown formatting, no backticks, no explanations.
+    2. Format: [{"question": "...", "options": ["...", "...", "...", "..."], "answer": 0}, ...]
+    3. "answer" must be the integer index (0-3) of the correct option.]`;
+
+    try {
+      const response = await fetch('http://localhost:5000/api/compiler/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          topic: "Quiz Generation",
+          history: [{ role: 'user', text: quizPrompt }]
+        })
+      });
+      const data = await response.json();
+      let reply = data.reply.trim();
+
+      if (reply.startsWith("```json")) reply = reply.replace(/```json/g, "").replace(/```/g, "").trim();
+      else if (reply.startsWith("```")) reply = reply.replace(/```/g, "").trim();
+
+      setQuizData(JSON.parse(reply));
+    } catch (error) {
+      console.error("Failed to generate quiz:", error);
+    } finally {
+      setIsGeneratingQuiz(false);
+    }
+  };
+
+  const submitAiQuiz = () => {
+    let score = 0;
+    quizData.forEach((q, idx) => {
+      if (quizAnswers[idx] === q.answer) score++;
+    });
+    setQuizScore(score);
+  };
+
+  const startExam = async () => {
+    setIsTakingQuiz(true);
+    setExamResult(null);
+    setMcqAnswers({});
+    setExamCodes({});
+
+    try {
+      const res = await fetch(`http://localhost:5000/api/exams/${topicId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setExamData(data);
+
+        const initialCodes = {};
+        data.codingChallenges.forEach((challenge, idx) => {
+          initialCodes[idx] = challenge.starterCode;
+        });
+        setExamCodes(initialCodes);
+
+      } else {
+        console.error("Exam not found");
+      }
+    } catch (e) {
+      console.error("Failed to fetch exam", e);
+    }
+  };
+
+  const submitExam = async () => {
+    if (!examData) return;
+
+    let mcqPassed = true;
+    for (let i = 0; i < examData.mcqs.length; i++) {
+      if (mcqAnswers[i] !== examData.mcqs[i].answer) {
+        mcqPassed = false;
+        break;
+      }
+    }
+
+    if (!mcqPassed) {
+      setExamResult({ passed: false, feedback: "You failed the Multiple Choice section. Review the module and try again." });
+      return;
+    }
+
+    setIsGrading(true);
+    let allPassed = true;
+    let feedbackMessages = [];
+
+    for (let i = 0; i < examData.codingChallenges.length; i++) {
+      const grade = await evaluateMasteryCode(examCodes[i], examData.codingChallenges[i].prompt);
+      if (!grade.passed) {
+        allPassed = false;
+        feedbackMessages.push(`Challenge ${i + 1}: ${grade.feedback}`);
+      }
+    }
+
+    setIsGrading(false);
+
+    if (allPassed) {
+      setExamResult({ passed: true, feedback: "Ready to proceed." });
+    } else {
+      setExamResult({ passed: false, feedback: feedbackMessages.join(" | ") });
+    }
+  };
+
+  const handlePassQuiz = async () => {
+    const moduleOrder = [
+      "fundamentals", "arrays_strings", "memory_pointers", "oop",
+      "linked_lists", "stacks_queues", "trees_heaps", "graphs"
+    ];
+
+    const currentIndex = moduleOrder.indexOf(topicId);
+    const nextNodeId = currentIndex !== -1 && currentIndex < moduleOrder.length - 1 
+      ? moduleOrder[currentIndex + 1] 
+      : null;
+
+    const storedId = localStorage.getItem('neuropath_user_id');
+
+    try {
+      await fetch('http://localhost:5000/api/users/level-up', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          enrollmentNo: storedId,
+          currentNodeId: topicId,
+          nextNodeId: nextNodeId
+        })
+      });
+    } catch (err) {
+      console.error("Level up sync failed", err);
+    }
+
+    const levelRewards = { "fundamentals": 1, "arrays_strings": 2, "memory_pointers": 3, "oop": 4, "linked_lists": 5, "stacks_queues": 6, "trees_heaps": 7, "graphs": 8 };
+    levelUp(levelRewards[topicId] || 1);
+    navigate('/dashboard', { replace: true });
+  }
+
+  const modeTabs = ['reading', 'code', 'video', 'flowchart', 'mind map'];
 
   return (
     <div className="focus-layout" style={{ position: "relative" }}>
-      {isTakingQuiz && (
-        <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.85)", zIndex: 1000, display: "flex", justifyContent: "center", alignItems: "center", backdropFilter: "blur(5px)" }}>
-          <div className="focus-layout" style={{ width: "500px", height: "auto", padding: "40px", textAlign: "center", border: "1px solid var(--accent)" }}>
-            <h2 style={{ color: "var(--accent)", letterSpacing: "2px" }}>MASTERY GATE</h2>
-            <div style={{ display: "flex", gap: "15px", justifyContent: "center", marginTop: "30px" }}>
-              <button className="logic-btn" onClick={() => setIsTakingQuiz(false)}>ABORT</button>
-              <button className="logic-btn" onClick={handlePassQuiz} style={{ background: "#68d391", color: "#1a1a1a", borderColor: "#68d391" }}>PASS</button>
-            </div>
-          </div>
-        </div>
-      )}
+
+      <QuizModal
+        isOpen={isQuizModalOpen}
+        onClose={() => setIsQuizModalOpen(false)}
+        isGenerating={isGeneratingQuiz}
+        quizData={quizData}
+        quizAnswers={quizAnswers}
+        setQuizAnswers={setQuizAnswers}
+        quizScore={quizScore}
+        onSubmitQuiz={submitAiQuiz}
+        activeSubtopic={activeSubtopic}
+      />
+
+      <ExamModal
+        isOpen={isTakingQuiz}
+        onClose={() => setIsTakingQuiz(false)}
+        topicId={topicId}
+        examData={examData}
+        mcqAnswers={mcqAnswers}
+        setMcqAnswers={setMcqAnswers}
+        examCodes={examCodes}
+        setExamCodes={setExamCodes}
+        chatScrollTrigger={chatScrollTrigger}
+        setChatScrollTrigger={setChatScrollTrigger}
+        isGrading={isGrading}
+        examResult={examResult}
+        onSubmitExam={submitExam}
+        onPassQuiz={handlePassQuiz}
+      />
 
       <div className="top-nav">
         <div style={{ display: "flex", alignItems: "center", gap: "20px" }}>
-          <button className="logic-btn" onClick={() => navigate('/hub')} style={{ width: "auto" }}>◀ RETURN</button>
+          <button className="logic-btn" onClick={() => navigate('/dashboard')} style={{ width: "auto" }}>◀ RETURN</button>
           <h2 className="nav-title" style={{ margin: 0 }}>MODULE <span style={{ color: "var(--accent)" }}>// {topicId.toUpperCase()}</span></h2>
         </div>
-        
+
         {isZenMode && (
           <div style={{ display: "flex", gap: "8px", flex: 1, justifyContent: "center" }}>
             {modeTabs.map(mode => (
@@ -232,36 +463,63 @@ function FocusRoom({ levelUp }) {
             ))}
           </div>
         )}
-
         <div className="profile-area" style={{ display: "flex", alignItems: "center", gap: "15px" }}>
-          <button className="logic-btn" onClick={() => setIsTakingQuiz(true)} style={{ width: "auto", padding: "8px 16px", borderColor: "#68d391", color: "#68d391" }}>TEST MASTERY</button>
-          <div style={{ width: "40px", height: "40px", borderRadius: "50%", border: "2px solid var(--accent)", background: "var(--glass-border)" }}></div>
-          <button className="logic-btn" style={{ width: "35px", height: "35px", padding: 0, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-          </button>
+          <button className="logic-btn" onClick={startExam} style={{ width: "auto", padding: "8px 16px", borderColor: "#68d391", color: "#68d391" }}>TEST MASTERY</button>
+
+          <div style={{ width: "40px", height: "40px", borderRadius: "50%", border: "2px solid var(--accent)", background: "var(--glass-border)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "bold", color: "var(--accent)", fontSize: "1.2rem", textTransform: "uppercase", overflow: "hidden" }}>
+            {userPfp ? (
+              <img src={userPfp} alt="Profile" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            ) : (
+              userName ? userName.charAt(0) : "?"
+            )}
+          </div>
+
+          <div
+            style={{ position: "relative" }}
+            onMouseEnter={() => setIsGearHovered(true)}
+            onMouseLeave={() => setIsGearHovered(false)}
+          >
+            <button
+              onClick={() => navigate('/settings')}
+              className="logic-btn"
+              style={{ width: "35px", height: "35px", padding: 0, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.9rem", cursor: "pointer" }}
+            >
+              ⚙️
+            </button>
+
+            {isGearHovered && (
+              <div style={{ position: "absolute", top: "100%", right: "0", paddingTop: "12px", zIndex: 150, minWidth: "160px" }}>
+                <div style={{ backgroundColor: "var(--bg-color)", border: "1px solid var(--glass-border)", borderRadius: "8px", overflow: "hidden", boxShadow: "0 10px 25px rgba(0,0,0,0.5)", display: "flex", flexDirection: "column" }}>
+                  <button
+                    onClick={() => navigate('/settings')}
+                    style={{ background: "transparent", border: "none", borderBottom: "1px solid rgba(255,255,255,0.05)", color: "var(--text-main)", padding: "12px 15px", textAlign: "left", cursor: "pointer", fontSize: "0.85rem", transition: "0.2s", display: "flex", alignItems: "center", gap: "8px" }}
+                    onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)'}
+                    onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                  >
+                    ✏️ Edit Profile
+                  </button>
+                  <button
+                    onClick={() => { localStorage.removeItem('neuropath_user_id'); navigate('/login'); }}
+                    style={{ background: "transparent", border: "none", color: "#ef4444", padding: "12px 15px", textAlign: "left", cursor: "pointer", fontSize: "0.85rem", transition: "0.2s", display: "flex", alignItems: "center", gap: "8px" }}
+                    onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'rgba(220, 38, 38, 0.1)'}
+                    onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                  >
+                    🚪 Logout
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      <div className="content-stage" ref={containerRef}>
+      <div className="content-stage" ref={containerRef} style={{ display: "flex", flex: 1, height: "100%", overflow: "hidden" }}>
         <div className="whiteboard-zone" style={{ flex: 1, minWidth: 0, position: "relative" }}>
-          
+
           {isZenMode && (
-            <div style={{ position: "absolute", top: "20px", right: "20px", zIndex: 110, display: "flex", gap: "10px", alignItems: "center" }}>
-              <button 
-                onClick={toggleZenMode}
-                className="logic-btn"
-                title="Exit Zen Mode"
-                style={{ width: "45px", height: "45px", borderRadius: "50%", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "var(--bg-color)", color: "var(--text-main)", border: "1px solid var(--glass-border)", boxShadow: "0 4px 15px rgba(0,0,0,0.3)" }}
-              >
-                ⤡
-              </button>
-              
-              <button 
-                onClick={() => setIsZenChatOpen(!isZenChatOpen)}
-                className="logic-btn"
-                title="Toggle AI Interface"
-                style={{ width: "45px", height: "45px", borderRadius: "50%", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: isZenChatOpen ? "var(--accent)" : "var(--bg-color)", color: isZenChatOpen ? "var(--bg-color)" : "var(--accent)", border: `1px solid ${isZenChatOpen ? "var(--accent)" : "var(--glass-border)"}`, boxShadow: "0 4px 15px rgba(0,0,0,0.3)" }}
-              >
+            <div style={{ position: "absolute", top: whiteboardMode === 'flowchart' ? "120px" : "20px", right: "20px", zIndex: 110, display: "flex", gap: "10px", alignItems: "center" }}>
+              <button onClick={toggleZenMode} className="logic-btn" title="Exit FullScreen Mode" style={{ width: "45px", height: "45px", borderRadius: "50%", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "var(--bg-color)", color: "var(--text-main)", border: "1px solid var(--glass-border)", boxShadow: "0 4px 15px rgba(0,0,0,0.3)" }}>⤡</button>
+              <button onClick={() => setIsZenChatOpen(!isZenChatOpen)} className="logic-btn" title="Toggle AI Interface" style={{ width: "45px", height: "45px", borderRadius: "50%", padding: 0, display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: isZenChatOpen ? "var(--accent)" : "var(--bg-color)", color: isZenChatOpen ? "var(--bg-color)" : "var(--accent)", border: `1px solid ${isZenChatOpen ? "var(--accent)" : "var(--glass-border)"}`, boxShadow: "0 4px 15px rgba(0,0,0,0.3)" }}>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
               </button>
             </div>
@@ -277,87 +535,102 @@ function FocusRoom({ levelUp }) {
 
               <div className="whiteboard-header">
                 <div style={{ display: "flex", gap: "8px" }}>
-                    {modeTabs.map(mode => (
-                        <button key={mode} className={`logic-btn ${whiteboardMode === mode ? 'active' : ''}`} onClick={() => setWhiteboardMode(mode)} style={{ padding: "6px 12px", fontSize: "0.75rem", textTransform: "uppercase", background: whiteboardMode === mode ? 'var(--accent)' : 'transparent', color: whiteboardMode === mode ? 'var(--bg-color)' : 'var(--text-main)' }}>
-                          {mode}
-                        </button>
-                    ))}
+                  {modeTabs.map(mode => (
+                    <button key={mode} className={`logic-btn ${whiteboardMode === mode ? 'active' : ''}`} onClick={() => setWhiteboardMode(mode)} style={{ padding: "6px 12px", fontSize: "0.75rem", textTransform: "uppercase", background: whiteboardMode === mode ? 'var(--accent)' : 'transparent', color: whiteboardMode === mode ? 'var(--bg-color)' : 'var(--text-main)' }}>
+                      {mode}
+                    </button>
+                  ))}
                 </div>
-                <button
-                  className={`logic-btn ${isZenMode ? 'active' : ''}`}
-                  onClick={toggleZenMode}
-                  title="Enter Zen Mode"
-                  style={{ padding: "6px 10px", fontSize: "1rem" }}
-                >
-                  ⤢
-                </button>
+                <button className={`logic-btn ${isZenMode ? 'active' : ''}`} onClick={toggleZenMode} title="Enter FullScreen Mode" style={{ padding: "6px 10px", fontSize: "1rem" }}>⤢</button>
               </div>
             </div>
           )}
 
           <div className="scrollable-content" style={{ padding: isZenMode ? "0" : "20px", overflowY: (whiteboardMode === 'flowchart' || whiteboardMode === 'mind map') ? 'hidden' : 'auto' }}>
-            
-            {/* THE NEW MODULAR CODE WORKSPACE COMPONENT */}
-            {whiteboardMode === 'code' && (
-                <CodeWorkspace
-                    code={currentSpace.code}
-                    onCodeChange={handleCodeChange}
-                    isZenMode={isZenMode}
-                    chatWidth={chatWidth}
-                />
-            )}
 
-            {whiteboardMode === 'memory map' && (
-                 <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: isZenMode ? "40px" : "0", color: "var(--text-main)", overflowY: "auto", maxWidth: "1000px", margin: "0 auto", width: "100%" }}>
-                     <h2 style={{ color: "var(--accent)", letterSpacing: "2px", textTransform: "uppercase", marginBottom: "20px", borderBottom: "1px solid var(--glass-border)", paddingBottom: "10px" }}>
-                       Memory Architecture // {activeSubtopic}
-                     </h2>
-                     
-                     <div style={{ display: "flex", flex: 1, gap: "20px" }}>
-                         <div style={{ flex: 1, border: "1px solid rgba(74, 222, 128, 0.5)", borderRadius: "8px", padding: "20px", background: "rgba(74, 222, 128, 0.05)" }}>
-                             <h3 style={{ color: "#4ade80", marginTop: 0, display: "flex", justifyContent: "space-between" }}>STACK <span>(Static)</span></h3>
-                             <p style={{ fontSize: "0.9rem", color: "var(--text-muted)", marginBottom: "20px" }}>Auto-managed memory. LIFO structure. Stores local variables and function calls.</p>
-                             <div style={{ borderBottom: "1px solid rgba(74, 222, 128, 0.3)", paddingBottom: "10px", marginTop: "15px", fontFamily: "monospace" }}>0x7ffee... main()</div>
-                         </div>
-                         
-                         <div style={{ flex: 1, border: "1px dashed rgba(246, 173, 85, 0.5)", borderRadius: "8px", padding: "20px", background: "rgba(246, 173, 85, 0.05)" }}>
-                             <h3 style={{ color: "#f6ad55", marginTop: 0, display: "flex", justifyContent: "space-between" }}>HEAP <span>(Dynamic)</span></h3>
-                             <p style={{ fontSize: "0.9rem", color: "var(--text-muted)", marginBottom: "20px" }}>Manually managed memory. Requires explicit allocation (new) and deallocation (delete).</p>
-                             <div style={{ borderBottom: "1px dashed rgba(246, 173, 85, 0.3)", paddingBottom: "10px", marginTop: "15px", fontFamily: "monospace", color: "var(--text-muted)" }}>[ Unallocated Space ]</div>
-                         </div>
-                     </div>
-                 </div>
+            {whiteboardMode === 'code' && (
+              <CodeWorkspace code={currentSpace.code} onCodeChange={handleCodeChange} isZenMode={isZenMode} chatWidth={chatWidth} />
             )}
 
             {whiteboardMode === 'reading' && (
-                <div style={{ color: "var(--text-main)", maxWidth: "800px", margin: "0 auto", padding: isZenMode ? "40px" : "0" }}>
-                    <h1 style={{ color: "var(--accent)", fontSize: "2rem", marginBottom: "20px" }}>{activeSubtopic}</h1>
-                    <p style={{ lineHeight: "1.8", fontSize: "1.1rem" }}>
-                        In C++, <strong>{activeSubtopic}</strong> forms the fundamental building block of logic.
-                        Unlike higher-level languages, C++ gives you direct control over memory...
-                    </p>
-                </div>
+              <ReadingMaterial
+                topicData={topicData}
+                activeSubtopic={activeSubtopic}
+                isZenMode={isZenMode}
+                onLoadCode={(code) => {
+                  handleCodeChange(code);
+                  setWhiteboardMode('code');
+                }}
+              />
             )}
 
             {whiteboardMode === 'video' && (
-                <div style={{ display: "flex", flexDirection: "column", height: "100%", justifyContent: "center", alignItems: "center" }}>
-                    <div style={{ width: "80%", aspectRatio: "16/9", background: "#000", borderRadius: "12px", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid var(--glass-border)" }}>
-                        <span style={{ color: "var(--text-muted)" }}>▶ YouTube Embed</span>
-                    </div>
+              <div style={{ display: "flex", flexDirection: "column", height: "100%", justifyContent: "center", alignItems: "center" }}>
+                <div style={{ width: "80%", aspectRatio: "16/9", background: "#000", borderRadius: "12px", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid var(--glass-border)" }}>
+                  <span style={{ color: "var(--text-muted)" }}>▶ YouTube Embed</span>
                 </div>
+              </div>
             )}
 
             {whiteboardMode === 'flowchart' && (
-                 <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", margin: isZenMode ? "40px" : "0", overflow: "auto" }}>
-                     {flowchartSvg && <img src={flowchartSvg} alt="Flowchart" style={{ maxWidth: "100%", maxHeight: "65vh", objectFit: "contain" }} />}
-                 </div>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%' }}>
+                <div style={{ padding: "10px 20px", borderBottom: "1px solid rgba(0,0,0,0.1)", background: "var(--bg)", display: "flex", justifyContent: "flex-end", alignItems: "center" }}>
+                  <button
+                    className="logic-btn"
+                    onClick={handleProfileCode}
+                    disabled={isProfiling}
+                    style={{
+                      width: "auto", padding: "6px 12px", fontSize: "0.75rem",
+                      borderColor: isProfiling ? "gray" : "#68d391",
+                      color: isProfiling ? "gray" : "#68d391",
+                      cursor: isProfiling ? "not-allowed" : "pointer"
+                    }}
+                  >
+                    {isProfiling ? "PROFILING..." : "▶ PROFILE CODE"}
+                  </button>
+                </div>
+
+                <div style={{ flex: 1, position: 'relative', overflow: "hidden", padding: 0 }}>
+                  {isProfiling ? (
+                    <div style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "var(--accent)", gap: "15px", fontFamily: "'Courier New', monospace" }}>
+                      <span style={{ fontSize: "1.5rem", animation: "blink 1s step-end infinite" }}>█</span>
+                      <span style={{ fontWeight: "bold", letterSpacing: "2px", textTransform: "uppercase", fontSize: "0.85rem" }}>Compiling logic map...</span>
+                    </div>
+                  ) : flowchartCode ? (
+                    <div style={{ width: '100%', height: '100%' }}>
+                      <MermaidViewer chartCode={flowchartCode} />
+                    </div>
+                  ) : (
+                    <div style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "var(--text-muted)", textAlign: "center", lineHeight: "1.6", fontFamily: "'Courier New', monospace", fontSize: "0.85rem" }}>
+                      <span style={{ fontSize: "2rem", display: "block", marginBottom: "15px", opacity: 0.5 }}>{"{ }"}</span>
+                      Awaiting input. Execute <strong style={{ color: "var(--text-main)" }}>PROFILE CODE</strong> to generate execution map.
+                    </div>
+                  )}
+                </div>
+              </div>
             )}
 
             {whiteboardMode === 'mind map' && (
-                 <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", margin: isZenMode ? "40px" : "0", overflow: "auto" }}>
-                     {mindmapSvg && <img src={mindmapSvg} alt="Mind Map" style={{ maxWidth: "100%", maxHeight: "65vh", objectFit: "contain" }} />}
-                 </div>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%' }}>
+                <div style={{ flex: 1, position: 'relative' }}>
+                  <MermaidViewer
+                    chartCode={generateThreadMap()}
+                    onNodeClick={(clickedText) => {
+                      const match = clickedText.match(/^Q(\d+):/);
+                      if (match) {
+                        const questionIndex = parseInt(match[1], 10) - 1;
+                        setChatScrollTrigger({ index: questionIndex, time: Date.now() });
+
+                        if (isZenMode && !isZenChatOpen) {
+                          setIsZenChatOpen(true);
+                        }
+                      }
+                    }}
+                  />
+                </div>
+              </div>
             )}
+
           </div>
         </div>
 
@@ -370,6 +643,10 @@ function FocusRoom({ levelUp }) {
             isZenMode={isZenMode}
             isZenChatOpen={isZenChatOpen}
             onUpdateSpace={handleUpdateSpace}
+            onOpenMindMap={() => setWhiteboardMode('mind map')}
+            onGenerateQuiz={handleGenerateQuiz}
+            chatScrollTrigger={chatScrollTrigger}
+            whiteboardMode={whiteboardMode}
           />
         )}
 
@@ -378,4 +655,3 @@ function FocusRoom({ levelUp }) {
   )
 }
 
-export default FocusRoom
